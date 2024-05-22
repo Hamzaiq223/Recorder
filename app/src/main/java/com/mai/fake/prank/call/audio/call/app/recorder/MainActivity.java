@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -12,14 +13,13 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.widget.Button;
-import android.widget.Toast;
+import android.view.WindowManager;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -31,7 +31,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     private SurfaceView surfaceView;
     private SurfaceHolder surfaceHolder;
     private Camera camera;
-    private Button buttonCapture,Save;
+    private ConstraintLayout layoutClick;
 
     private static final int CAMERA_PERMISSION_CODE = 100;
 
@@ -40,8 +40,14 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        getWindow().getDecorView().setBackgroundColor(Color.BLACK);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+        // Immersive Mode کو فعال کریں
+        hideSystemUI();
+
         surfaceView = findViewById(R.id.surfaceView);
-        buttonCapture = findViewById(R.id.buttonCapture);
+        layoutClick = findViewById(R.id.layoutClick);
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_CODE);
@@ -49,10 +55,23 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             setupCamera();
         }
 
-        buttonCapture.setOnClickListener(v -> captureImage());
+        layoutClick.setOnClickListener(v -> captureImage());
+    }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hideSystemUI();
+    }
 
-
+    private void hideSystemUI() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_IMMERSIVE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_FULLSCREEN);
     }
 
     private void setupCamera() {
@@ -63,7 +82,6 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         camera = Camera.open();
-        setCameraDisplayOrientation();
         Camera.Parameters parameters = camera.getParameters();
         camera.setParameters(parameters);
 
@@ -74,44 +92,6 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             e.printStackTrace();
         }
     }
-
-
-
-
-    private void setCameraDisplayOrientation() {
-        if (camera == null) {
-            return;
-        }
-
-        Camera.CameraInfo info = new Camera.CameraInfo();
-        Camera.getCameraInfo(Camera.CameraInfo.CAMERA_FACING_BACK, info);
-        int rotation = getWindowManager().getDefaultDisplay().getRotation();
-        int degrees = 0;
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 0;
-                break;
-            case Surface.ROTATION_90:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 180;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 270;
-                break;
-        }
-
-        int result;
-        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            result = (info.orientation + degrees) % 360;
-            result = (360 - result) % 360;  // compensate the mirror
-        } else {  // back-facing
-            result = (info.orientation - degrees + 360) % 360;
-        }
-        camera.setDisplayOrientation(result);
-    }
-
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -139,17 +119,11 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         camera = null;
     }
 
-
-
-
     private void captureImage() {
         camera.takePicture(null, null, new Camera.PictureCallback() {
             @Override
             public void onPictureTaken(byte[] data, Camera camera) {
                 saveImage(data);
-                // Save the image data to gallery
-                // This part will include converting byte array to a file and saving it in the gallery.
-                Toast.makeText(MainActivity.this, "Picture Taken", Toast.LENGTH_SHORT).show();
                 camera.startPreview();
             }
         });
@@ -161,13 +135,9 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         if (requestCode == CAMERA_PERMISSION_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 setupCamera();
-            } else {
-                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_SHORT).show();
             }
         }
     }
-
-
 
     private void saveImage(byte[] data) {
         File pictureFileDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "MyApp");
@@ -189,25 +159,18 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             fos.write(data);
             fos.close();
 
-            // Correct the orientation
             correctImageOrientation(filename);
 
-            Toast.makeText(this, "New Image saved: " + photoFile, Toast.LENGTH_SHORT).show();
-
-            // Notify the media scanner about the new file so that it is immediately available to the user.
             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(pictureFile)));
         } catch (Exception error) {
             Log.d("MyApp", "File " + filename + " not saved: " + error.getMessage());
-            Toast.makeText(this, "Image could not be saved.", Toast.LENGTH_SHORT).show();
         }
     }
-
 
     private void correctImageOrientation(String imagePath) {
         try {
             ExifInterface exif = new ExifInterface(imagePath);
             int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED);
-            Log.d("MyApp", "Original EXIF orientation: " + orientation);
 
             Bitmap bitmap = BitmapFactory.decodeFile(imagePath);
             Bitmap rotatedBitmap = null;
@@ -215,20 +178,16 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             switch (orientation) {
                 case ExifInterface.ORIENTATION_ROTATE_90:
                     rotatedBitmap = rotateImage(bitmap, 90);
-                    Log.d("MyApp", "Rotating image 90 degrees");
                     break;
                 case ExifInterface.ORIENTATION_ROTATE_180:
                     rotatedBitmap = rotateImage(bitmap, 180);
-                    Log.d("MyApp", "Rotating image 180 degrees");
                     break;
                 case ExifInterface.ORIENTATION_ROTATE_270:
                     rotatedBitmap = rotateImage(bitmap, 270);
-                    Log.d("MyApp", "Rotating image 270 degrees");
                     break;
                 case ExifInterface.ORIENTATION_NORMAL:
                 default:
                     rotatedBitmap = bitmap;
-                    Log.d("MyApp", "No rotation needed");
             }
 
             if (rotatedBitmap != bitmap) {
@@ -239,11 +198,9 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
                 // Update EXIF data to reflect the new orientation
                 exif.setAttribute(ExifInterface.TAG_ORIENTATION, String.valueOf(ExifInterface.ORIENTATION_NORMAL));
                 exif.saveAttributes();
-                Log.d("MyApp", "EXIF orientation set to NORMAL");
             }
         } catch (IOException e) {
             e.printStackTrace();
-            Log.e("MyApp", "Error correcting image orientation: " + e.getMessage());
         }
     }
 
@@ -252,7 +209,4 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         matrix.postRotate(angle);
         return Bitmap.createBitmap(source, 0, 0, source.getWidth(), source.getHeight(), matrix, true);
     }
-
-
-
 }
